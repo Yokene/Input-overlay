@@ -312,8 +312,9 @@ class KeyOverlay(QWidget):
         # TRANSPARENT BACKGROUND
         # -------------------------------------------------
 
+        # Исправлено с CompositionMode_Source на SourceOver для корректной прозрачности в OBS
         painter.setCompositionMode(
-            QPainter.CompositionMode_Source
+            QPainter.CompositionMode_SourceOver
         )
 
         painter.setBrush(
