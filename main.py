@@ -3,7 +3,6 @@ import json
 import os
 import time
 import keyboard
-import subprocess
 
 from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtGui import QPainter, QPen, QBrush, QFont, QColor
@@ -15,16 +14,9 @@ from PySide6.QtCore import Qt, QTimer, QPoint, QRectF
 # =========================================================
 
 if getattr(sys, "frozen", False):
-    # EXE находится:
-    # dist/main/main.exe
-    #
-    # Поэтому config.json находится:
-    # dist/config.json
     BASE_DIR = os.path.dirname(os.path.dirname(sys.executable))
 else:
-    # Запуск main.py из VS Code
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 
@@ -32,7 +24,6 @@ CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 DEFAULT_CONFIG = {
     "key": "up",
     "text": "↑",
-
     "close_key": "f8",
     "settings_close_key": "f9",
 
@@ -56,6 +47,10 @@ DEFAULT_CONFIG = {
 }
 
 
+# =========================================================
+# LOAD CONFIG
+# =========================================================
+
 def load_config():
     if not os.path.exists(CONFIG_FILE):
         return DEFAULT_CONFIG.copy()
@@ -64,7 +59,6 @@ def load_config():
         with open(CONFIG_FILE, "r", encoding="utf-8") as file:
             config = json.load(file)
 
-        # Добавляем отсутствующие новые параметры
         for key, value in DEFAULT_CONFIG.items():
             if key not in config:
                 config[key] = value
@@ -72,7 +66,7 @@ def load_config():
         return config
 
     except Exception as error:
-        print("Ошибка загрузки config.json:", error)
+        print("Ошибка config.json:", error)
         return DEFAULT_CONFIG.copy()
 
 
@@ -97,7 +91,7 @@ def parse_hex_color(hex_str):
 
     cleaned = hex_str[1:]
 
-    # Формат #RRGGBBAA
+    # #RRGGBBAA
     if len(cleaned) == 8:
         try:
             r = int(cleaned[0:2], 16)
@@ -110,90 +104,13 @@ def parse_hex_color(hex_str):
         except ValueError:
             pass
 
-    # Формат #RRGGBB
+    # #RRGGBB
     color = QColor(hex_str)
 
     if color.isValid():
         return color
 
     return QColor(255, 255, 255, 255)
-
-
-# =========================================================
-# SETTINGS PROCESS
-# =========================================================
-
-settings_process = None
-
-
-def open_settings():
-    global settings_process
-
-    # Если настройки уже открыты — второй раз не запускаем
-    if settings_process is not None:
-
-        try:
-            if settings_process.poll() is None:
-                return
-        except Exception:
-            pass
-
-    if getattr(sys, "frozen", False):
-
-        # main.exe:
-        # dist/main/main.exe
-
-        main_dir = os.path.dirname(sys.executable)
-
-        # settings.exe:
-        # dist/settings/settings.exe
-
-        settings_exe = os.path.abspath(
-            os.path.join(
-                main_dir,
-                "..",
-                "settings",
-                "settings.exe"
-            )
-        )
-
-        if os.path.exists(settings_exe):
-
-            try:
-                settings_process = subprocess.Popen(
-                    [settings_exe],
-                    cwd=os.path.dirname(settings_exe)
-                )
-
-            except Exception as error:
-                print("Ошибка запуска settings.exe:", error)
-
-        else:
-            print("Не найден settings.exe:")
-            print(settings_exe)
-
-    else:
-
-        # Запуск из VS Code
-        settings_py = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "settings.py"
-        )
-
-        if os.path.exists(settings_py):
-
-            try:
-                settings_process = subprocess.Popen(
-                    [sys.executable, settings_py],
-                    cwd=os.path.dirname(settings_py)
-                )
-
-            except Exception as error:
-                print("Ошибка запуска settings.py:", error)
-
-        else:
-            print("Не найден settings.py:")
-            print(settings_py)
 
 
 # =========================================================
@@ -208,7 +125,6 @@ class KeyOverlay(QWidget):
         self.config = config
 
         self.key_pressed = False
-
         self.click_times = []
 
         self.dragging = False
@@ -216,39 +132,47 @@ class KeyOverlay(QWidget):
 
         self.setWindowTitle("Input Overlay")
 
-        # Окно без рамки + поверх остальных окон
+        # -------------------------------------------------
+        # ПРОЗРАЧНОЕ ОКНО
+        # -------------------------------------------------
+
         self.setWindowFlags(
-            Qt.FramelessWindowHint
+            Qt.FramelessWindowHint |
+            Qt.Tool
         )
 
         self.setAttribute(
-            Qt.WA_TranslucentBackground
+            Qt.WA_TranslucentBackground,
+            True
+        )
+
+        self.setAttribute(
+            Qt.WA_NoSystemBackground,
+            True
+        )
+
+        # Не показывать окно на панели задач
+        self.setAttribute(
+            Qt.WA_ShowWithoutActivating,
+            True
         )
 
         self.update_size()
 
-        # =================================================
-        # KEY CHECK TIMER
-        # =================================================
+        # -------------------------------------------------
+        # CHECK KEY
+        # -------------------------------------------------
 
-        self.timer = QTimer()
-
-        self.timer.timeout.connect(
-            self.check_key
-        )
-
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.check_key)
         self.timer.start(10)
 
-        # =================================================
-        # CPS REFRESH TIMER
-        # =================================================
+        # -------------------------------------------------
+        # CPS UPDATE
+        # -------------------------------------------------
 
-        self.refresh_timer = QTimer()
-
-        self.refresh_timer.timeout.connect(
-            self.update
-        )
-
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.update)
         self.refresh_timer.start(50)
 
         self.show()
@@ -275,8 +199,7 @@ class KeyOverlay(QWidget):
         current_time = time.time()
 
         self.click_times = [
-            t
-            for t in self.click_times
+            t for t in self.click_times
             if current_time - t <= 1.0
         ]
 
@@ -288,18 +211,15 @@ class KeyOverlay(QWidget):
 
     def check_key(self):
 
-        # ---------------------------------------------
-        # Закрытие оверлея
-        # ---------------------------------------------
+        # -------------------------------------------------
+        # CLOSE KEY
+        # -------------------------------------------------
 
         try:
-
             close_pressed = keyboard.is_pressed(
                 self.config["close_key"]
             )
-
         except Exception:
-
             close_pressed = False
 
         if close_pressed:
@@ -308,31 +228,24 @@ class KeyOverlay(QWidget):
             self.refresh_timer.stop()
 
             QApplication.quit()
-
             return
 
-        # ---------------------------------------------
-        # Основная клавиша
-        # ---------------------------------------------
+        # -------------------------------------------------
+        # MAIN KEY
+        # -------------------------------------------------
 
         try:
-
             pressed = keyboard.is_pressed(
                 self.config["key"]
             )
-
         except Exception:
-
             pressed = False
 
         # Новый клик
         if pressed and not self.key_pressed:
+            self.click_times.append(time.time())
 
-            self.click_times.append(
-                time.time()
-            )
-
-        # Изменилось состояние кнопки
+        # Изменилось состояние клавиши
         if pressed != self.key_pressed:
 
             self.key_pressed = pressed
@@ -348,39 +261,31 @@ class KeyOverlay(QWidget):
         painter = QPainter(self)
 
         painter.setRenderHint(
-            QPainter.Antialiasing
+            QPainter.Antialiasing,
+            True
         )
 
         width = self.config["width"]
         height = self.config["height"]
 
         radius = self.config["corner_radius"]
-
         border_width = self.config["border_width"]
 
-        # ---------------------------------------------
-        # Выбор цветов
-        # ---------------------------------------------
+        # -------------------------------------------------
+        # COLORS
+        # -------------------------------------------------
 
         if self.key_pressed:
 
             fill_key = "pressed_color"
-
             border_key = "pressed_border_color"
-
             text_key = "pressed_text_color"
 
         else:
 
             fill_key = "normal_color"
-
             border_key = "border_color"
-
             text_key = "text_color"
-
-        # ---------------------------------------------
-        # Цвет заливки
-        # ---------------------------------------------
 
         fill_color = parse_hex_color(
             self.config.get(
@@ -389,20 +294,12 @@ class KeyOverlay(QWidget):
             )
         )
 
-        # ---------------------------------------------
-        # Цвет рамки
-        # ---------------------------------------------
-
         border_color = parse_hex_color(
             self.config.get(
                 border_key,
                 self.config["border_color"]
             )
         )
-
-        # ---------------------------------------------
-        # Цвет текста
-        # ---------------------------------------------
 
         text_color = parse_hex_color(
             self.config.get(
@@ -411,9 +308,36 @@ class KeyOverlay(QWidget):
             )
         )
 
-        # =================================================
-        # BACKGROUND
-        # =================================================
+        # -------------------------------------------------
+        # TRANSPARENT BACKGROUND
+        # -------------------------------------------------
+
+        painter.setCompositionMode(
+            QPainter.CompositionMode_Source
+        )
+
+        painter.setBrush(
+            Qt.NoBrush
+        )
+
+        painter.setPen(
+            Qt.NoPen
+        )
+
+        # -------------------------------------------------
+        # BUTTON
+        # -------------------------------------------------
+
+        button_rect = QRectF(
+            10,
+            10,
+            width,
+            height
+        )
+
+        # -------------------------------------------------
+        # FILL
+        # -------------------------------------------------
 
         if fill_color.alpha() > 0:
 
@@ -427,35 +351,22 @@ class KeyOverlay(QWidget):
                 Qt.NoBrush
             )
 
-        # =================================================
+        # -------------------------------------------------
         # BORDER
-        # =================================================
+        # -------------------------------------------------
 
-        if (
-            border_width > 0
-            and border_color.alpha() > 0
-        ):
+        if border_width > 0 and border_color.alpha() > 0:
 
             pen = QPen(border_color)
-
             pen.setWidth(border_width)
 
             painter.setPen(pen)
 
         else:
 
-            painter.setPen(Qt.NoPen)
-
-        # =================================================
-        # BUTTON
-        # =================================================
-
-        button_rect = QRectF(
-            10,
-            10,
-            width,
-            height
-        )
+            painter.setPen(
+                Qt.NoPen
+            )
 
         painter.drawRoundedRect(
             button_rect,
@@ -463,9 +374,9 @@ class KeyOverlay(QWidget):
             radius
         )
 
-        # =================================================
+        # -------------------------------------------------
         # TEXT
-        # =================================================
+        # -------------------------------------------------
 
         if text_color.alpha() > 0:
 
@@ -473,9 +384,9 @@ class KeyOverlay(QWidget):
                 QPen(text_color)
             )
 
-            # -----------------------------------------
-            # Основной символ
-            # -----------------------------------------
+            # -------------------------------------------------
+            # MAIN TEXT
+            # -------------------------------------------------
 
             top_rect = QRectF(
                 10,
@@ -492,7 +403,9 @@ class KeyOverlay(QWidget):
 
             font_main.setBold(True)
 
-            painter.setFont(font_main)
+            painter.setFont(
+                font_main
+            )
 
             painter.drawText(
                 top_rect,
@@ -500,9 +413,9 @@ class KeyOverlay(QWidget):
                 self.config["text"]
             )
 
-            # -----------------------------------------
+            # -------------------------------------------------
             # CPS
-            # -----------------------------------------
+            # -------------------------------------------------
 
             cps_val = self.get_cps()
 
@@ -523,7 +436,9 @@ class KeyOverlay(QWidget):
 
             font_cps.setBold(True)
 
-            painter.setFont(font_cps)
+            painter.setFont(
+                font_cps
+            )
 
             painter.drawText(
                 bottom_rect,
@@ -531,8 +446,10 @@ class KeyOverlay(QWidget):
                 cps_text
             )
 
+        painter.end()
+
     # =====================================================
-    # DRAG
+    # DRAGGING
     # =====================================================
 
     def mousePressEvent(self, event):
@@ -575,11 +492,5 @@ if __name__ == "__main__":
     config = load_config()
 
     window = KeyOverlay(config)
-
-    # Если хоткей настроек всё-таки нужен:
-    keyboard.add_hotkey(
-        "ctrl+shift+f10",
-        open_settings
-    )
 
     sys.exit(app.exec())
