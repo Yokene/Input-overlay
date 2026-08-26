@@ -1,0 +1,18 @@
+{
+    "key": "up",
+    "text": "↑",
+    "close_key": "esc",
+    "width": 100,
+    "height": 100,
+    "corner_radius": 20,
+    "border_width": 3,
+    "normal_color": "#FFFFFF00",
+    "pressed_color": "#FFFFFF",
+    "border_color": "#FFFFFF",
+    "text_color": "#FFFFFF",
+    "font_size": 40,
+    "cps_font_size": 25,
+    "settings_close_key": "f9",
+    "pressed_border_color": "#FFFFFF",
+    "pressed_text_color": "#000000"
+}
