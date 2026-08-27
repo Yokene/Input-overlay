@@ -9,11 +9,16 @@ from PySide6.QtWidgets import (
     QDialogButtonBox, QFrame
 )
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, QPoint
-from PySide6.QtGui import QColor, QPainter, QLinearGradient, QPen
+from PySide6.QtGui import QColor, QPainter, QLinearGradient, QPen, QIcon
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+
+def resource_path(filename):
+    if getattr(sys, "frozen", False):
+        return os.path.join(os.path.dirname(sys.executable), filename)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
 
 DEFAULT_CONFIG = {
     "key": "up",
@@ -35,12 +40,30 @@ DEFAULT_CONFIG = {
 }
 
 
+
+
 if getattr(sys, "frozen", False):
     BASE_DIR = os.path.dirname(os.path.dirname(sys.executable))
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+
+
+def load_stylesheet():
+    if getattr(sys, "frozen", False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    qss_path = os.path.join(base_dir, "style.qss")
+
+    try:
+        with open(qss_path, "r", encoding="utf-8") as file:
+            return file.read()
+    except Exception as error:
+        print("Ошибка загрузки style.qss:", error)
+        return ""
 
 
 def load_config():
@@ -377,20 +400,6 @@ class CustomColorDialog(QDialog):
 
         main_layout.addLayout(picker_layout)
 
-        labels_layout = QHBoxLayout()
-        labels_layout.addStretch()
-
-        brightness_label = QLabel("Яркость")
-        brightness_label.setAlignment(Qt.AlignCenter)
-
-        opacity_label = QLabel("Прозрачность")
-        opacity_label.setAlignment(Qt.AlignCenter)
-
-        labels_layout.addWidget(brightness_label)
-        labels_layout.addSpacing(5)
-        labels_layout.addWidget(opacity_label)
-        main_layout.addLayout(labels_layout)
-
         self.preview = QFrame()
         self.preview.setFixedHeight(35)
         main_layout.addWidget(self.preview)
@@ -537,12 +546,25 @@ class CustomColorDialog(QDialog):
 class SettingsWindow(QWidget):
     def __init__(self):
         super().__init__()
+
         self.config = load_config()
         self.listening = False
         self._key_threads = []
 
+        self.qss_path = resource_path("style.qss")
+        self.qss_last_modified = (
+            os.path.getmtime(self.qss_path)
+            if os.path.exists(self.qss_path)
+            else 0
+        )
+
         self.setWindowTitle("Input Overlay - Settings")
-        self.resize(1000, 520)
+
+        icon_path = resource_path("settings.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+
+        self.resize(1100, 520)
 
         main_layout = QHBoxLayout()
         main_layout.setSpacing(25)
@@ -608,26 +630,50 @@ class SettingsWindow(QWidget):
 
         right_col.addSpacing(10)
 
+        right_col.addStretch()
+
         self.save_button = QPushButton("Сохранить настройки")
         self.save_button.setMinimumHeight(40)
         self.save_button.clicked.connect(self.save_settings)
         right_col.addWidget(self.save_button)
 
-        info = QLabel(
-            "Настройки сохраняются в config.json\n"
-            "Заданная клавиша — закрыть окно настроек."
-        )
-        info.setAlignment(Qt.AlignCenter)
-        right_col.addWidget(info)
-        right_col.addStretch()
-
-        # Сборка
+# Сборка
         main_layout.addLayout(left_col)
         main_layout.addLayout(mid_col)
         main_layout.addLayout(right_col)
+
         self.setLayout(main_layout)
 
+        for widget in self.findChildren(QPushButton):
+            widget.setCursor(Qt.PointingHandCursor)
+
+        for widget in self.findChildren(QSlider):
+            widget.setCursor(Qt.PointingHandCursor)
+
+        for widget in self.findChildren(QSpinBox):
+            widget.setCursor(Qt.PointingHandCursor)
+
         self.center_window()
+
+    def check_qss(self):
+        try:
+            if not os.path.exists(self.qss_path):
+                return
+
+            modified = os.path.getmtime(self.qss_path)
+
+            if modified != self.qss_last_modified:
+                self.qss_last_modified = modified
+
+                with open(self.qss_path, "r", encoding="utf-8") as file:
+                    stylesheet = file.read()
+
+                QApplication.instance().setStyleSheet(stylesheet)
+
+                print("QSS обновлён")
+
+        except Exception as error:
+            print("Ошибка QSS:", error)
 
         # Закрытие
         self.close_timer = QTimer()
@@ -723,8 +769,10 @@ class SettingsWindow(QWidget):
 
     def create_color_row(self, layout, name, config_key, on_click):
         row = QHBoxLayout()
+
         name_label = QLabel(name)
-        name_label.setFixedWidth(170)
+        name_label.setObjectName("colorName")
+        name_label.setFixedWidth(210)
 
         initial_val = self.config.get(config_key, "#FFFFFF")
 
@@ -736,11 +784,11 @@ class SettingsWindow(QWidget):
         swatch.setFixedSize(28, 28)
         swatch.setCursor(Qt.PointingHandCursor)
         swatch.setStyleSheet(self.swatch_style(initial_val))
-
         swatch.clicked.connect(on_click)
 
         hex_input.textChanged.connect(
-            lambda text, k=config_key, s=swatch, inp=hex_input: self.on_hex_text_changed(text, k, s, inp)
+            lambda text, k=config_key, s=swatch, inp=hex_input:
+            self.on_hex_text_changed(text, k, s, inp)
         )
 
         row.addWidget(name_label)
@@ -749,6 +797,7 @@ class SettingsWindow(QWidget):
         row.addWidget(swatch)
 
         layout.addLayout(row)
+
         return swatch, hex_input
 
     def on_hex_text_changed(self, text, config_key, swatch, hex_input):
@@ -903,6 +952,29 @@ class SettingsWindow(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
+    # Иконка приложения
+    if getattr(sys, "frozen", False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    icon_path = os.path.join(base_dir, "settings.ico")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
+
+    # Загружаем стиль ДО создания окна
+    stylesheet = load_stylesheet()
+    if stylesheet:
+        app.setStyleSheet(stylesheet)
+
+    # Создаём окно только после загрузки стиля
     window = SettingsWindow()
+
+    # Применяем стиль непосредственно к окну
+    if stylesheet:
+        window.setStyleSheet(stylesheet)
+
     window.show()
+
     sys.exit(app.exec())
